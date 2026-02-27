@@ -1,0 +1,8 @@
+aws_region          = "us-east-1"
+account_name        = "prod"
+project_name        = "myapp"
+domain_name         = "example.com"
+private_domain_name = "internal.example.com"
+vpc_id              = "vpc-12345678"
+alb_dns_name        = "my-alb-123456.us-east-1.elb.amazonaws.com"
+alb_zone_id         = "Z35SXDOTRQ7X7K"
