@@ -255,22 +255,23 @@ module "route53" {
 
 ### General Configuration
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `create` | Whether to create Route53 resources | `bool` | `true` | no |
-| `account_name` | Account name for resource naming (1-32 chars, lowercase, hyphens) | `string` | - | yes |
-| `project_name` | Project name for resource naming (1-32 chars, lowercase, hyphens) | `string` | - | yes |
-| `region_prefix` | Region prefix for naming (auto-derived if not set) | `string` | `null` | no |
-| `use_region_prefix` | Whether to include region prefix in resource names | `bool` | `true` | no |
-| `tags` | Additional tags to apply to all resources | `map(string)` | `{}` | no |
+| Name                | Description                                                       | Type          | Default | Required |
+| ------------------- | ----------------------------------------------------------------- | ------------- | ------- | -------- |
+| `create`            | Whether to create Route53 resources                               | `bool`        | `true`  | no       |
+| `account_name`      | Account name for resource naming (1-32 chars, lowercase, hyphens) | `string`      | -       | yes      |
+| `project_name`      | Project name for resource naming (1-32 chars, lowercase, hyphens) | `string`      | -       | yes      |
+| `region_prefix`     | Region prefix for naming (auto-derived if not set)                | `string`      | `null`  | no       |
+| `use_region_prefix` | Whether to include region prefix in resource names                | `bool`        | `true`  | no       |
+| `tags`              | Additional tags to apply to all resources                         | `map(string)` | `{}`    | no       |
 
 ### Hosted Zones
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `zones` | Map of Route53 hosted zones to create | `map(object)` | `{}` | no |
+| Name    | Description                           | Type          | Default | Required |
+| ------- | ------------------------------------- | ------------- | ------- | -------- |
+| `zones` | Map of Route53 hosted zones to create | `map(object)` | `{}`    | no       |
 
 Each zone object supports:
+
 - `domain_name` (string, required) - Domain name for the zone
 - `comment` (string) - Zone comment (default: "Managed by Terraform")
 - `force_destroy` (bool) - Destroy records when zone is destroyed (default: false)
@@ -280,11 +281,12 @@ Each zone object supports:
 
 ### DNS Records
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `records` | Map of Route53 records to create | `map(object)` | `{}` | no |
+| Name      | Description                      | Type          | Default | Required |
+| --------- | -------------------------------- | ------------- | ------- | -------- |
+| `records` | Map of Route53 records to create | `map(object)` | `{}`    | no       |
 
 Each record object supports:
+
 - `zone_key` (string) - Reference to zone in this module
 - `zone_id` (string) - External zone ID
 - `name` (string) - Record name
@@ -307,11 +309,12 @@ Each record object supports:
 
 ### Health Checks
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `health_checks` | Map of Route53 health checks to create | `map(object)` | `{}` | no |
+| Name            | Description                            | Type          | Default | Required |
+| --------------- | -------------------------------------- | ------------- | ------- | -------- |
+| `health_checks` | Map of Route53 health checks to create | `map(object)` | `{}`    | no       |
 
 Each health check object supports:
+
 - `type` (string, required) - Check type (HTTP, HTTPS, HTTP_STR_MATCH, HTTPS_STR_MATCH, TCP, CALCULATED, CLOUDWATCH_METRIC, RECOVERY_CONTROL)
 - `fqdn` (string) - FQDN to check
 - `ip_address` (string) - IP address to check
@@ -333,76 +336,76 @@ Each health check object supports:
 
 ### Delegation Sets
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `delegation_sets` | Map of delegation sets to create | `map(object)` | `{}` | no |
+| Name              | Description                      | Type          | Default | Required |
+| ----------------- | -------------------------------- | ------------- | ------- | -------- |
+| `delegation_sets` | Map of delegation sets to create | `map(object)` | `{}`    | no       |
 
 ### Resolver Endpoints
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `resolver_endpoints` | Map of resolver endpoints to create | `map(object)` | `{}` | no |
+| Name                 | Description                         | Type          | Default | Required |
+| -------------------- | ----------------------------------- | ------------- | ------- | -------- |
+| `resolver_endpoints` | Map of resolver endpoints to create | `map(object)` | `{}`    | no       |
 
 ### Resolver Rules
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| `resolver_rules` | Map of resolver rules to create | `map(object)` | `{}` | no |
+| Name             | Description                     | Type          | Default | Required |
+| ---------------- | ------------------------------- | ------------- | ------- | -------- |
+| `resolver_rules` | Map of resolver rules to create | `map(object)` | `{}`    | no       |
 
 ## Outputs
 
 ### Hosted Zones
 
-| Name | Description |
-|------|-------------|
-| `zone_ids` | Map of zone key to zone ID |
-| `zone_arns` | Map of zone key to zone ARN |
-| `zone_name_servers` | Map of zone key to name servers |
+| Name                        | Description                            |
+| --------------------------- | -------------------------------------- |
+| `zone_ids`                  | Map of zone key to zone ID             |
+| `zone_arns`                 | Map of zone key to zone ARN            |
+| `zone_name_servers`         | Map of zone key to name servers        |
 | `zone_primary_name_servers` | Map of zone key to primary name server |
-| `zone_names` | Map of zone key to zone name |
+| `zone_names`                | Map of zone key to zone name           |
 
 ### Records
 
-| Name | Description |
-|------|-------------|
-| `record_names` | Map of record key to record name |
-| `record_fqdns` | Map of record key to FQDN |
-| `records` | All created records with full attributes |
+| Name           | Description                              |
+| -------------- | ---------------------------------------- |
+| `record_names` | Map of record key to record name         |
+| `record_fqdns` | Map of record key to FQDN                |
+| `records`      | All created records with full attributes |
 
 ### Health Checks
 
-| Name | Description |
-|------|-------------|
-| `health_check_ids` | Map of health check key to ID |
-| `health_check_arns` | Map of health check key to ARN |
-| `health_checks` | All created health checks with full attributes |
+| Name                | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `health_check_ids`  | Map of health check key to ID                  |
+| `health_check_arns` | Map of health check key to ARN                 |
+| `health_checks`     | All created health checks with full attributes |
 
 ### Delegation Sets
 
-| Name | Description |
-|------|-------------|
-| `delegation_set_ids` | Map of delegation set key to ID |
+| Name                          | Description                               |
+| ----------------------------- | ----------------------------------------- |
+| `delegation_set_ids`          | Map of delegation set key to ID           |
 | `delegation_set_name_servers` | Map of delegation set key to name servers |
 
 ### Resolver
 
-| Name | Description |
-|------|-------------|
-| `resolver_endpoint_ids` | Map of resolver endpoint key to ID |
-| `resolver_endpoint_arns` | Map of resolver endpoint key to ARN |
-| `resolver_endpoint_host_vpc_ids` | Map of resolver endpoint key to host VPC ID |
-| `resolver_endpoints` | All created resolver endpoints with full attributes |
-| `resolver_rule_ids` | Map of resolver rule key to ID |
-| `resolver_rule_arns` | Map of resolver rule key to ARN |
-| `resolver_rules` | All created resolver rules with full attributes |
-| `resolver_rule_associations` | All created resolver rule associations |
+| Name                             | Description                                         |
+| -------------------------------- | --------------------------------------------------- |
+| `resolver_endpoint_ids`          | Map of resolver endpoint key to ID                  |
+| `resolver_endpoint_arns`         | Map of resolver endpoint key to ARN                 |
+| `resolver_endpoint_host_vpc_ids` | Map of resolver endpoint key to host VPC ID         |
+| `resolver_endpoints`             | All created resolver endpoints with full attributes |
+| `resolver_rule_ids`              | Map of resolver rule key to ID                      |
+| `resolver_rule_arns`             | Map of resolver rule key to ARN                     |
+| `resolver_rules`                 | All created resolver rules with full attributes     |
+| `resolver_rule_associations`     | All created resolver rule associations              |
 
 ## Requirements
 
-| Name | Version |
-|------|---------|
-| terraform | ~> 1.0 |
-| aws | ~> 6.0 |
+| Name      | Version |
+| --------- | ------- |
+| terraform | ~> 1.0  |
+| aws       | ~> 6.0  |
 
 ## Examples
 
@@ -414,6 +417,7 @@ See the [examples](./examples) directory for complete usage examples:
 ## Resource Naming
 
 Health checks are named following the module convention:
+
 ```
 {region_prefix}-r53-hc-{account_name}-{project_name}-{key}
 ```
@@ -421,6 +425,7 @@ Health checks are named following the module convention:
 Example: `ause1-r53-hc-prod-myapp-primary-web`
 
 Resolver endpoints follow a similar pattern:
+
 ```
 {region_prefix}-r53-resolver-{account_name}-{project_name}-{key}
 ```
