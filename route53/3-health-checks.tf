@@ -6,9 +6,14 @@ resource "aws_route53_health_check" "this" {
   for_each = { for k, v in var.health_checks : k => v if var.create }
 
   # Common settings
-  type               = each.value.type
-  failure_threshold  = each.value.failure_threshold
-  request_interval   = each.value.request_interval
+  type = each.value.type
+
+  # request_interval and failure_threshold are only valid for endpoint-based health checks
+  # (HTTP, HTTPS, HTTP_STR_MATCH, HTTPS_STR_MATCH, TCP), not for CALCULATED, CLOUDWATCH_METRIC,
+  # or RECOVERY_CONTROL types.
+  request_interval  = contains(["CALCULATED", "CLOUDWATCH_METRIC", "RECOVERY_CONTROL"], each.value.type) ? null : each.value.request_interval
+  failure_threshold = contains(["CALCULATED", "CLOUDWATCH_METRIC", "RECOVERY_CONTROL"], each.value.type) ? null : each.value.failure_threshold
+
   measure_latency    = each.value.measure_latency
   invert_healthcheck = each.value.invert_healthcheck
   disabled           = each.value.disabled

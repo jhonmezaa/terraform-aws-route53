@@ -283,7 +283,7 @@ variable "resolver_rules" {
     - resolver_endpoint_key: Key reference to resolver endpoint in this module
     - resolver_endpoint_id: External resolver endpoint ID (alternative to key)
     - target_ips: List of target IP addresses for forwarding
-    - vpc_ids: List of VPC IDs to associate this rule with
+    - vpc_associations: Map of VPC associations (key = user-defined name, value = VPC ID). Using a map ensures stable for_each keys.
     - tags: Additional tags for this resolver rule
   EOT
   type = map(object({
@@ -298,8 +298,8 @@ variable "resolver_rules" {
       port     = optional(number)
       protocol = optional(string)
     })), [])
-    vpc_ids = optional(list(string), [])
-    tags    = optional(map(string), {})
+    vpc_associations = optional(map(string), {})
+    tags             = optional(map(string), {})
   }))
   default = {}
 }
