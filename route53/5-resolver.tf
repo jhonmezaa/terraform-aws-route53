@@ -41,10 +41,11 @@ locals {
   }
 
   # Expand resolver rules with VPC associations into individual rule-vpc pairs
+  # Uses user-defined keys from vpc_associations map for stable for_each keys
   resolver_rule_vpc_associations = merge([
     for rule_key, rule in var.resolver_rules : {
-      for vpc_id in rule.vpc_ids :
-      "${rule_key}-${vpc_id}" => {
+      for assoc_key, vpc_id in rule.vpc_associations :
+      "${rule_key}-${assoc_key}" => {
         rule_key = rule_key
         vpc_id   = vpc_id
       }
