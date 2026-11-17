@@ -41,3 +41,9 @@ variable "alb_zone_id" {
   type        = string
   default     = "Z35SXDOTRQ7X7K"
 }
+
+variable "external_vpc_id" {
+  description = "Optional VPC ID (usually in another account) authorized to be associated with the private zone."
+  type        = string
+  default     = null
+}
