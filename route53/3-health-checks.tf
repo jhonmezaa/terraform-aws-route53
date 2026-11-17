@@ -41,10 +41,11 @@ resource "aws_route53_health_check" "this" {
   routing_control_arn = each.value.routing_control_arn
 
   tags = merge(
-    var.tags,
+    local.common_tags,
     each.value.tags,
     {
-      Name = "${local.name_prefix}r53-hc-${var.account_name}-${var.project_name}-${each.key}"
+      Name      = "${local.name_prefix}r53-hc-${var.account_name}-${var.project_name}-${each.key}"
+      ManagedBy = "Terraform"
     }
   )
 }

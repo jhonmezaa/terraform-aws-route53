@@ -2,10 +2,27 @@
 # Route53 Resolver Endpoints
 # =============================================================================
 
+locals {
+  # Resolver endpoint and rule names are limited to 64 characters by AWS
+  resolver_endpoint_names = {
+    for k, v in var.resolver_endpoints : k => coalesce(
+      v.name,
+      substr("${local.name_prefix}r53-resolver-${var.account_name}-${var.project_name}-${k}", 0, 64)
+    )
+  }
+
+  resolver_rule_names = {
+    for k, v in var.resolver_rules : k => coalesce(
+      v.name,
+      substr("${local.name_prefix}r53-rule-${var.account_name}-${var.project_name}-${k}", 0, 64)
+    )
+  }
+}
+
 resource "aws_route53_resolver_endpoint" "this" {
   for_each = { for k, v in var.resolver_endpoints : k => v if var.create }
 
-  name      = coalesce(each.value.name, "${local.name_prefix}r53-resolver-${var.account_name}-${var.project_name}-${each.key}")
+  name      = local.resolver_endpoint_names[each.key]
   direction = each.value.direction
 
   dynamic "ip_address" {
@@ -23,10 +40,11 @@ resource "aws_route53_resolver_endpoint" "this" {
   resolver_endpoint_type = each.value.resolver_endpoint_type
 
   tags = merge(
-    var.tags,
+    local.common_tags,
     each.value.tags,
     {
-      Name = coalesce(each.value.name, "${local.name_prefix}r53-resolver-${var.account_name}-${var.project_name}-${each.key}")
+      Name      = local.resolver_endpoint_names[each.key]
+      ManagedBy = "Terraform"
     }
   )
 }
@@ -56,10 +74,10 @@ locals {
 resource "aws_route53_resolver_rule" "this" {
   for_each = { for k, v in var.resolver_rules : k => v if var.create }
 
-  name                 = coalesce(each.value.name, each.key)
+  name                 = local.resolver_rule_names[each.key]
   domain_name          = each.value.domain_name
   rule_type            = each.value.rule_type
-  resolver_endpoint_id = each.value.rule_type == "FORWARD" ? coalesce(each.value.resolver_endpoint_id, try(local.resolver_endpoint_id_map[each.value.resolver_endpoint_key], null)) : null
+  resolver_endpoint_id = each.value.rule_type == "FORWARD" ? try(coalesce(each.value.resolver_endpoint_id, try(local.resolver_endpoint_id_map[each.value.resolver_endpoint_key], null)), null) : null
 
   dynamic "target_ip" {
     for_each = each.value.target_ips
@@ -73,12 +91,20 @@ resource "aws_route53_resolver_rule" "this" {
   }
 
   tags = merge(
-    var.tags,
+    local.common_tags,
     each.value.tags,
     {
-      Name = coalesce(each.value.name, "${local.name_prefix}r53-rule-${var.account_name}-${var.project_name}-${each.key}")
+      Name      = local.resolver_rule_names[each.key]
+      ManagedBy = "Terraform"
     }
   )
+
+  lifecycle {
+    precondition {
+      condition     = each.value.resolver_endpoint_key == null || contains(keys(var.resolver_endpoints), coalesce(each.value.resolver_endpoint_key, "-"))
+      error_message = "La regla \"${each.key}\" referencia un resolver_endpoint_key que no existe en var.resolver_endpoints."
+    }
+  }
 }
 
 # =============================================================================

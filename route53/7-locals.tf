@@ -29,11 +29,17 @@ locals {
     "ap-south-1"     = "apso1"
     "ap-south-2"     = "apso2"
     "ap-east-1"      = "apea1"
+    "ap-east-2"      = "apea2"
+    "ap-southeast-5" = "apse5"
+    "ap-southeast-6" = "apse6"
+    "ap-southeast-7" = "apse7"
     # SA Regions
     "sa-east-1" = "saea1"
     # CA Regions
     "ca-central-1" = "cace1"
     "ca-west-1"    = "cawe1"
+    # MX Regions
+    "mx-central-1" = "mxce1"
     # ME Regions
     "me-south-1"   = "meso1"
     "me-central-1" = "mece1"
@@ -53,17 +59,22 @@ locals {
   name_prefix = var.use_region_prefix ? "${local.region_prefix}-" : ""
 
   # =============================================================================
+  # Tags
+  # =============================================================================
+
+  # tags_common is the convention-wide variable; tags is kept for backward compatibility
+  common_tags = merge(var.tags_common, var.tags)
+
+  # =============================================================================
   # Zone ID Resolution for Records
   # =============================================================================
 
   # Build a map of zone_key -> zone_id for records that reference zones created in this module
-  zone_id_map = {
-    for k, v in aws_route53_zone.this : k => v.zone_id
-  }
+  # Zones may live in aws_route53_zone.this or aws_route53_zone.ignore_vpc (ignore_vpc = true)
+  all_zones = merge(aws_route53_zone.this, aws_route53_zone.ignore_vpc)
 
-  # Build a map of zone_key -> zone_name for records that need the zone name
-  zone_name_map = {
-    for k, v in aws_route53_zone.this : k => v.name
+  zone_id_map = {
+    for k, v in local.all_zones : k => v.zone_id
   }
 
   # =============================================================================
@@ -78,13 +89,18 @@ locals {
   # Records Processing
   # =============================================================================
 
-  # Resolve zone_id for each record: zone_key (internal) > zone_id (external) > zone_name (data lookup)
+  # Resolve zone_id for each record: zone_id (external) > zone_key (zone created in this module)
   records_with_zone = {
     for k, v in var.records : k => merge(v, {
-      resolved_zone_id = coalesce(
+      resolved_zone_id = try(coalesce(
         v.zone_id,
         try(local.zone_id_map[v.zone_key], null)
-      )
+      ), null)
+      # alias.zone_id = "self" points the alias to the record's own hosted zone
+      resolved_alias_zone_id = try(v.alias.zone_id == "self", false) ? try(coalesce(
+        v.zone_id,
+        try(local.zone_id_map[v.zone_key], null)
+      ), null) : try(v.alias.zone_id, null)
       resolved_health_check_id = try(
         coalesce(
           v.health_check_id,
