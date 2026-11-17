@@ -14,12 +14,12 @@ variable "account_name" {
 
   validation {
     condition     = length(var.account_name) > 0 && length(var.account_name) <= 32
-    error_message = "account_name must be between 1 and 32 characters."
+    error_message = "account_name debe tener entre 1 y 32 caracteres."
   }
 
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.account_name))
-    error_message = "account_name can only contain lowercase letters, numbers, and hyphens."
+    error_message = "account_name solo puede contener letras minúsculas, números y guiones."
   }
 }
 
@@ -29,12 +29,12 @@ variable "project_name" {
 
   validation {
     condition     = length(var.project_name) > 0 && length(var.project_name) <= 32
-    error_message = "project_name must be between 1 and 32 characters."
+    error_message = "project_name debe tener entre 1 y 32 caracteres."
   }
 
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.project_name))
-    error_message = "project_name can only contain lowercase letters, numbers, and hyphens."
+    error_message = "project_name solo puede contener letras minúsculas, números y guiones."
   }
 }
 
@@ -50,8 +50,14 @@ variable "use_region_prefix" {
   default     = true
 }
 
+variable "tags_common" {
+  description = "Common tags applied to all resources that support tags."
+  type        = map(string)
+  default     = {}
+}
+
 variable "tags" {
-  description = "Additional tags to apply to all resources."
+  description = "Additional tags to apply to all resources. Kept for backward compatibility; merged on top of tags_common."
   type        = map(string)
   default     = {}
 }
@@ -69,7 +75,13 @@ variable "zones" {
     - comment: Optional comment for the hosted zone
     - force_destroy: Whether to destroy all records when destroying the zone
     - vpc: List of VPCs to associate (makes the zone private)
-    - delegation_set_id: ID of a reusable delegation set
+    - delegation_set_id: ID of an external reusable delegation set (public zones only)
+    - delegation_set_key: Key of a delegation set created in this module (public zones only)
+    - vpc_association_authorizations: Map of VPCs (usually in other accounts) authorized to be
+      associated with this private zone (key = user-defined name)
+    - ignore_vpc: Ignore changes to the VPC associations after creation (use when extra VPC
+      associations are managed outside this module, e.g. cross-account). Changing it on an
+      existing zone moves it between resource addresses (see Upgrade notes)
     - tags: Additional tags for this specific zone
   EOT
   type = map(object({
@@ -80,8 +92,14 @@ variable "zones" {
       vpc_id     = string
       vpc_region = optional(string)
     })), [])
-    delegation_set_id = optional(string)
-    tags              = optional(map(string), {})
+    delegation_set_id  = optional(string)
+    delegation_set_key = optional(string)
+    vpc_association_authorizations = optional(map(object({
+      vpc_id     = string
+      vpc_region = optional(string)
+    })), {})
+    ignore_vpc = optional(bool, false)
+    tags       = optional(map(string), {})
   }))
   default = {}
 }
@@ -98,17 +116,18 @@ variable "records" {
     - zone_key: Reference to a zone created in this module (key from zones variable)
     - zone_id: External zone ID (alternative to zone_key)
     - name: Record name (e.g., "www" or "www.example.com")
-    - full_name: Full record name (overrides name + zone domain construction)
+    - full_name: Full record name (takes precedence over name; the key is used when both are null)
     - type: Record type (A, AAAA, CNAME, MX, TXT, SRV, NS, CAA, etc.)
     - ttl: TTL in seconds (not used with alias records)
     - records: List of record values
-    - alias: Alias record configuration
+    - alias: Alias record configuration (zone_id = "self" targets the record's own zone)
     - Routing policies: weighted, latency, failover, geolocation, geoproximity, cidr
     - health_check_id: External health check ID
     - health_check_key: Reference to a health check created in this module
     - set_identifier: Unique identifier for routing policy records
     - multivalue_answer: Enable multivalue answer routing
     - allow_overwrite: Allow overwriting existing records
+    - tags: Not used (Route53 records do not support tags); kept for backward compatibility
   EOT
   type = map(object({
     zone_key  = optional(string)
@@ -160,6 +179,16 @@ variable "records" {
     tags              = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition     = alltrue([for k, v in var.records : v.zone_id != null || v.zone_key != null])
+    error_message = "Cada record debe definir zone_id o zone_key."
+  }
+
+  validation {
+    condition     = alltrue([for k, v in var.records : v.alias == null || v.records == null])
+    error_message = "Un record con alias no puede definir records (ttl se ignora en los alias)."
+  }
 }
 
 # =============================================================================
@@ -190,6 +219,7 @@ variable "health_checks" {
     - cloudwatch_alarm_region: CloudWatch alarm region (for CLOUDWATCH_METRIC type)
     - insufficient_data_health_status: Status when CloudWatch has insufficient data
     - routing_control_arn: ARN of the Route53 Application Recovery Controller routing control
+    - reference_name: Reference name used as caller reference (ForceNew)
     - tags: Additional tags for this health check
   EOT
   type = map(object({
@@ -216,6 +246,21 @@ variable "health_checks" {
     tags                            = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition = alltrue([
+      for k, v in var.health_checks : contains(
+        ["HTTP", "HTTPS", "HTTP_STR_MATCH", "HTTPS_STR_MATCH", "TCP", "CALCULATED", "CLOUDWATCH_METRIC", "RECOVERY_CONTROL"],
+        v.type
+      )
+    ])
+    error_message = "type debe ser HTTP, HTTPS, HTTP_STR_MATCH, HTTPS_STR_MATCH, TCP, CALCULATED, CLOUDWATCH_METRIC o RECOVERY_CONTROL."
+  }
+
+  validation {
+    condition     = alltrue([for k, v in var.health_checks : contains([10, 30], v.request_interval)])
+    error_message = "request_interval debe ser 10 o 30."
+  }
 }
 
 # =============================================================================
@@ -266,6 +311,11 @@ variable "resolver_endpoints" {
     tags                   = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition     = alltrue([for k, v in var.resolver_endpoints : contains(["INBOUND", "OUTBOUND"], v.direction)])
+    error_message = "direction debe ser INBOUND u OUTBOUND."
+  }
 }
 
 # =============================================================================
@@ -277,7 +327,7 @@ variable "resolver_rules" {
     Map of Route53 Resolver rules to create and associate with VPCs.
 
     Each resolver rule supports:
-    - name: Friendly name for the resolver rule
+    - name: Friendly name for the resolver rule (default: module naming convention)
     - domain_name: DNS queries for this domain will be forwarded
     - rule_type: FORWARD, SYSTEM, or RECURSIVE
     - resolver_endpoint_key: Key reference to resolver endpoint in this module
@@ -302,4 +352,16 @@ variable "resolver_rules" {
     tags             = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition     = alltrue([for k, v in var.resolver_rules : contains(["FORWARD", "SYSTEM", "RECURSIVE"], v.rule_type)])
+    error_message = "rule_type debe ser FORWARD, SYSTEM o RECURSIVE."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.resolver_rules : v.rule_type != "FORWARD" || v.resolver_endpoint_id != null || v.resolver_endpoint_key != null
+    ])
+    error_message = "Las reglas FORWARD deben definir resolver_endpoint_id o resolver_endpoint_key."
+  }
 }

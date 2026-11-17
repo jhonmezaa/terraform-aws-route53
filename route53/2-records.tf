@@ -28,7 +28,7 @@ resource "aws_route53_record" "this" {
 
     content {
       name                   = alias.value.name
-      zone_id                = alias.value.zone_id
+      zone_id                = each.value.resolved_alias_zone_id
       evaluate_target_health = alias.value.evaluate_target_health
     }
   }
@@ -98,6 +98,18 @@ resource "aws_route53_record" "this" {
     content {
       collection_id = cidr_routing_policy.value.collection_id
       location_name = cidr_routing_policy.value.location_name
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = each.value.zone_id != null || contains(keys(var.zones), coalesce(each.value.zone_key, "-"))
+      error_message = "El record \"${each.key}\" referencia un zone_key que no existe en var.zones."
+    }
+
+    precondition {
+      condition     = each.value.health_check_key == null || contains(keys(var.health_checks), coalesce(each.value.health_check_key, "-"))
+      error_message = "El record \"${each.key}\" referencia un health_check_key que no existe en var.health_checks."
     }
   }
 }

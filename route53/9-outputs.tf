@@ -4,27 +4,32 @@
 
 output "zone_ids" {
   description = "Map of zone key to zone ID for all created hosted zones."
-  value       = { for k, v in aws_route53_zone.this : k => v.zone_id }
+  value       = { for k, v in local.all_zones : k => v.zone_id }
 }
 
 output "zone_arns" {
   description = "Map of zone key to zone ARN for all created hosted zones."
-  value       = { for k, v in aws_route53_zone.this : k => v.arn }
+  value       = { for k, v in local.all_zones : k => v.arn }
 }
 
 output "zone_name_servers" {
   description = "Map of zone key to name servers for all created hosted zones."
-  value       = { for k, v in aws_route53_zone.this : k => v.name_servers }
+  value       = { for k, v in local.all_zones : k => v.name_servers }
 }
 
 output "zone_primary_name_servers" {
   description = "Map of zone key to primary name server for all created hosted zones."
-  value       = { for k, v in aws_route53_zone.this : k => v.primary_name_server }
+  value       = { for k, v in local.all_zones : k => v.primary_name_server }
 }
 
 output "zone_names" {
   description = "Map of zone key to zone name for all created hosted zones."
-  value       = { for k, v in aws_route53_zone.this : k => v.name }
+  value       = { for k, v in local.all_zones : k => v.name }
+}
+
+output "vpc_association_authorizations" {
+  description = "All created Route53 VPC association authorizations (key = <zone_key>-<authorization_key>)."
+  value       = aws_route53_vpc_association_authorization.this
 }
 
 # =============================================================================
@@ -79,6 +84,11 @@ output "delegation_set_name_servers" {
   value       = { for k, v in aws_route53_delegation_set.this : k => v.name_servers }
 }
 
+output "delegation_set_reference_names" {
+  description = "Map of delegation set key to reference name."
+  value       = { for k, v in aws_route53_delegation_set.this : k => v.reference_name }
+}
+
 # =============================================================================
 # Resolver Endpoint Outputs
 # =============================================================================
@@ -96,6 +106,11 @@ output "resolver_endpoint_arns" {
 output "resolver_endpoint_host_vpc_ids" {
   description = "Map of resolver endpoint key to host VPC ID."
   value       = { for k, v in aws_route53_resolver_endpoint.this : k => v.host_vpc_id }
+}
+
+output "resolver_endpoint_ip_addresses" {
+  description = "Map of resolver endpoint key to its IP address configuration."
+  value       = { for k, v in aws_route53_resolver_endpoint.this : k => v.ip_address }
 }
 
 output "resolver_endpoints" {
