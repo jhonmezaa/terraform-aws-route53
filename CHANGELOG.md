@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.1.0] - 2026-11-17
+
+### Added
+
+- `tags_common` variable (project convention); merged with the existing `tags` variable, which is kept for backward compatibility
+- `ManagedBy = "Terraform"` tag on every taggable resource
+- `zones.delegation_set_key` to reference a delegation set created in the same module (`delegation_set_id` still takes precedence)
+- `zones.vpc_association_authorizations` (`aws_route53_vpc_association_authorization`) for cross-account private zone associations, and `vpc_association_authorizations` output
+- `zones.ignore_vpc` (default `false`): creates the zone in `aws_route53_zone.ignore_vpc`, which ignores later changes to VPC associations managed outside the module
+- `alias.zone_id = "self"` to point an alias to the record's own hosted zone
+- Outputs `delegation_set_reference_names` and `resolver_endpoint_ip_addresses`
+- Region prefixes for `ap-east-2`, `ap-southeast-5`, `ap-southeast-6`, `ap-southeast-7` and `mx-central-1`
+- Validations (error messages in Spanish): health check `type` and `request_interval`, resolver endpoint `direction`, resolver rule `rule_type`, FORWARD rules require an endpoint, records require `zone_id` or `zone_key`, alias records cannot define `records`
+- Preconditions that fail the plan when `zone_key`, `health_check_key`, `delegation_set_key` or `resolver_endpoint_key` reference a missing key (previously a typo in `health_check_key` or `delegation_set_key` was silently ignored)
+
+### Changed
+
+- Resolver rules without an explicit `name` now use the module naming convention (`{prefix}-r53-rule-{account}-{project}-{key}`) instead of the map key, matching their `Name` tag
+- Resolver endpoint and rule generated names are truncated to 64 characters (AWS limit)
+- `account_name` / `project_name` validation messages translated to Spanish
+- Removed unused `data.aws_caller_identity` and `zone_name_map` local
+- Examples: version files renamed to `versions.tf`; `complete` shows a delegation set key, cross-account authorization, `ignore_vpc` and a `self` alias; both use `tags_common`
+
+### Upgrade notes
+
+- Resolver rules created without `name` are renamed in place (no replacement) to the convention name. Set `name = "<key>"` to keep the previous name.
+- The new `ManagedBy` tag (and any `tags_common`) produces an in-place tag update on existing resources.
+- Setting `ignore_vpc = true` on an existing zone moves it to a different address. Run `terraform state mv 'module.<name>.aws_route53_zone.this["<key>"]' 'module.<name>.aws_route53_zone.ignore_vpc["<key>"]'` before applying to avoid recreating the zone.
+
 ## [v2.0.5] - 2026-10-27
 
 ### Changed

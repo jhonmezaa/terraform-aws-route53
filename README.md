@@ -13,8 +13,9 @@ Production-ready Terraform module for managing AWS Route53 hosted zones, DNS rec
 - **Resolver Endpoints**: Inbound and outbound DNS resolver endpoints
 - **Resolver Rules**: DNS forwarding rules with VPC associations
 - **Cross-Resource References**: Records can reference zones and health checks created in the same module
-- **Regional Support**: Automatic region prefix mapping for 29 AWS regions
-- **Input Validation**: Comprehensive variable validations for account/project names
+- **Cross-Account Private Zones**: VPC association authorizations and `ignore_vpc` to keep externally managed associations
+- **Regional Support**: Automatic region prefix mapping for 34 AWS regions
+- **Input Validation**: Validations for names, enums and cross-references (`zone_key`, `health_check_key`, `delegation_set_key`, `resolver_endpoint_key`)
 
 ## Usage
 
@@ -22,7 +23,7 @@ Production-ready Terraform module for managing AWS Route53 hosted zones, DNS rec
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -61,7 +62,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -91,7 +92,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -124,7 +125,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -179,7 +180,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -230,11 +231,38 @@ module "route53" {
 }
 ```
 
+### Cross-Account Private Zone
+
+```hcl
+module "route53" {
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+
+  account_name = "prod"
+  project_name = "myapp"
+
+  zones = {
+    internal = {
+      domain_name = "internal.example.com"
+      vpc         = [{ vpc_id = "vpc-12345678" }]
+      ignore_vpc  = true # keep associations created from other accounts
+      vpc_association_authorizations = {
+        shared = {
+          vpc_id     = "vpc-87654321" # VPC in the other account
+          vpc_region = "us-east-1"
+        }
+      }
+    }
+  }
+}
+```
+
+The other account then creates the `aws_route53_zone_association` with the zone ID from `zone_ids`.
+
 ### Using External Zone ID
 
 ```hcl
 module "route53" {
-  source = "./route53"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -262,7 +290,8 @@ module "route53" {
 | `project_name`      | Project name for resource naming (1-32 chars, lowercase, hyphens) | `string`      | -       | yes      |
 | `region_prefix`     | Region prefix for naming (auto-derived if not set)                | `string`      | `null`  | no       |
 | `use_region_prefix` | Whether to include region prefix in resource names                | `bool`        | `true`  | no       |
-| `tags`              | Additional tags to apply to all resources                         | `map(string)` | `{}`    | no       |
+| `tags_common`       | Common tags applied to all resources that support tags            | `map(string)` | `{}`    | no       |
+| `tags`              | Additional tags (backward compatible, merged over `tags_common`)  | `map(string)` | `{}`    | no       |
 
 ### Hosted Zones
 
@@ -276,7 +305,10 @@ Each zone object supports:
 - `comment` (string) - Zone comment (default: "Managed by Terraform")
 - `force_destroy` (bool) - Destroy records when zone is destroyed (default: false)
 - `vpc` (list of objects) - VPCs to associate (makes zone private)
-- `delegation_set_id` (string) - Delegation set ID for the zone
+- `delegation_set_id` (string) - External delegation set ID (public zones only)
+- `delegation_set_key` (string) - Key of a delegation set created in this module (public zones only)
+- `vpc_association_authorizations` (map of objects: `vpc_id`, `vpc_region`) - VPCs (usually in other accounts) authorized to associate with this private zone
+- `ignore_vpc` (bool) - Ignore changes to VPC associations after creation (default: false). See the Upgrade notes in the CHANGELOG before toggling it on an existing zone
 - `tags` (map of string) - Additional tags
 
 ### DNS Records
@@ -290,11 +322,11 @@ Each record object supports:
 - `zone_key` (string) - Reference to zone in this module
 - `zone_id` (string) - External zone ID
 - `name` (string) - Record name
-- `full_name` (string) - Full record name (overrides name)
+- `full_name` (string) - Full record name (takes precedence over `name`; the map key is used when both are null)
 - `type` (string, required) - Record type (A, AAAA, CNAME, MX, TXT, etc.)
 - `ttl` (number) - TTL in seconds
 - `records` (list of strings) - Record values
-- `alias` (object) - Alias record config (name, zone_id, evaluate_target_health)
+- `alias` (object) - Alias record config (`name`, `zone_id`, `evaluate_target_health` default `true`). `zone_id = "self"` targets the record's own zone. `records` cannot be combined with `alias`; `ttl` is ignored
 - `set_identifier` (string) - Routing policy identifier
 - `weighted_routing_policy` (object) - Weighted routing config
 - `latency_routing_policy` (object) - Latency routing config
@@ -333,6 +365,9 @@ Each health check object supports:
 - `cloudwatch_alarm_name` (string) - CloudWatch alarm (CLOUDWATCH_METRIC type)
 - `cloudwatch_alarm_region` (string) - Alarm region (CLOUDWATCH_METRIC type)
 - `insufficient_data_health_status` (string) - Status on insufficient data
+- `routing_control_arn` (string) - ARC routing control ARN (RECOVERY_CONTROL type)
+- `reference_name` (string) - Caller reference name (forces replacement)
+- `tags` (map of string) - Additional tags
 
 ### Delegation Sets
 
@@ -363,6 +398,7 @@ Each health check object supports:
 | `zone_name_servers`         | Map of zone key to name servers        |
 | `zone_primary_name_servers` | Map of zone key to primary name server |
 | `zone_names`                | Map of zone key to zone name           |
+| `vpc_association_authorizations` | All created VPC association authorizations |
 
 ### Records
 
@@ -386,6 +422,7 @@ Each health check object supports:
 | ----------------------------- | ----------------------------------------- |
 | `delegation_set_ids`          | Map of delegation set key to ID           |
 | `delegation_set_name_servers` | Map of delegation set key to name servers |
+| `delegation_set_reference_names` | Map of delegation set key to reference name |
 
 ### Resolver
 
@@ -394,6 +431,7 @@ Each health check object supports:
 | `resolver_endpoint_ids`          | Map of resolver endpoint key to ID                  |
 | `resolver_endpoint_arns`         | Map of resolver endpoint key to ARN                 |
 | `resolver_endpoint_host_vpc_ids` | Map of resolver endpoint key to host VPC ID         |
+| `resolver_endpoint_ip_addresses` | Map of resolver endpoint key to IP addresses        |
 | `resolver_endpoints`             | All created resolver endpoints with full attributes |
 | `resolver_rule_ids`              | Map of resolver rule key to ID                      |
 | `resolver_rule_arns`             | Map of resolver rule key to ARN                     |
@@ -412,7 +450,7 @@ Each health check object supports:
 See the [examples](./examples) directory for complete usage examples:
 
 - [Basic](./examples/basic) - Public hosted zone with A, CNAME, MX, and TXT records
-- [Complete](./examples/complete) - Full-featured example with public/private zones, alias records, all routing policies, health checks, and delegation sets
+- [Complete](./examples/complete) - Full-featured example with public/private zones, delegation set reference, cross-account authorization, alias records (including `self`), routing policies and health checks
 
 ## Resource Naming
 
@@ -424,11 +462,16 @@ Health checks are named following the module convention:
 
 Example: `ause1-r53-hc-prod-myapp-primary-web`
 
-Resolver endpoints follow a similar pattern:
+Resolver endpoints and resolver rules follow a similar pattern (truncated to 64 characters):
 
 ```
 {region_prefix}-r53-resolver-{account_name}-{project_name}-{key}
+{region_prefix}-r53-rule-{account_name}-{project_name}-{key}
 ```
+
+Hosted zones use the domain name as `Name` tag. Every taggable resource gets
+`merge(tags_common, tags, <resource tags>, { Name, ManagedBy = "Terraform" })`.
+An explicit `name` overrides the generated one.
 
 When `use_region_prefix = false`, the region prefix is omitted from names.
 
