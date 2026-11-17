@@ -63,3 +63,12 @@ output "delegation_set_name_servers" {
   description = "Map of delegation set key to name servers."
   value       = module.route53.delegation_set_name_servers
 }
+
+# =============================================================================
+# VPC Association Authorization Outputs
+# =============================================================================
+
+output "vpc_association_authorizations" {
+  description = "VPC association authorizations created for the private zone."
+  value       = module.route53.vpc_association_authorizations
+}

@@ -33,6 +33,12 @@ module "route53" {
       }
     }
 
+    # Public sub-zone using the delegation set created above
+    delegated = {
+      domain_name        = "delegated.${var.domain_name}"
+      delegation_set_key = "main"
+    }
+
     # Private hosted zone
     private = {
       domain_name = var.private_domain_name
@@ -43,6 +49,16 @@ module "route53" {
           vpc_region = var.aws_region
         }
       ]
+      # Authorize a VPC from another account to be associated with this zone.
+      # The association itself (aws_route53_zone_association) is created from that account.
+      vpc_association_authorizations = var.external_vpc_id != null ? {
+        external = {
+          vpc_id     = var.external_vpc_id
+          vpc_region = var.aws_region
+        }
+      } : {}
+      # Do not remove associations created outside this module
+      ignore_vpc = true
       tags = {
         Type = "private"
       }
@@ -84,6 +100,18 @@ module "route53" {
         name                   = var.alb_dns_name
         zone_id                = var.alb_zone_id
         evaluate_target_health = true
+      }
+    }
+
+    # Alias to another record in the same zone ("self" = this record's zone)
+    apex = {
+      zone_key  = "public"
+      full_name = var.domain_name
+      type      = "A"
+      alias = {
+        name                   = "www.${var.domain_name}"
+        zone_id                = "self"
+        evaluate_target_health = false
       }
     }
 
@@ -280,7 +308,7 @@ module "route53" {
     }
   }
 
-  tags = {
+  tags_common = {
     Environment = "production"
     Example     = "complete"
   }

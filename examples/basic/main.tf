@@ -59,7 +59,7 @@ module "route53" {
     }
   }
 
-  tags = {
+  tags_common = {
     Environment = "production"
     Example     = "basic"
   }
