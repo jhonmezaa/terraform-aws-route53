@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.2.0] - 2026-11-24
+
+### Added
+
+- DNSSEC for public zones (`zones.enable_dnssec`, default `false`): `aws_route53_key_signing_key` and `aws_route53_hosted_zone_dnssec` per zone, with `dnssec_kms_key_arn`, `dnssec_key_signing_key_name`, `dnssec_key_signing_key_status` and `dnssec_signing_status` per zone
+- Shared DNSSEC KMS key created by the module in `us-east-1` (`ECC_NIST_P256`, `SIGN_VERIFY`, Route53 DNSSEC key policy) and optional aliases; variables `create_dnssec_kms_key`, `dnssec_kms_key_arn`, `dnssec_kms_key_description`, `dnssec_kms_key_aliases`, `dnssec_kms_key_deletion_window_in_days`, `dnssec_kms_key_tags`
+- Resolver DNS Firewall: `firewall_domain_lists` (shared lists) and `firewall_rule_groups` (rule groups, rules with inline `domains` / `domain_list_key` / `firewall_domain_list_id`, VPC associations and RAM resource associations), including `firewall_domain_redirection_action`
+- Optional security group for resolver endpoints (`resolver_endpoints.create_security_group`, default `false`) with TCP and UDP port 53 ingress/egress rules (`aws_vpc_security_group_ingress_rule` / `aws_vpc_security_group_egress_rule`)
+- Outputs: `dnssec_*`, `firewall_*`, `resolver_endpoint_security_group_ids` and `resolver_endpoint_security_group_arns`
+- Validations and preconditions (Spanish messages): DNSSEC only on public zones and with a KMS key, KSK name format, signing statuses, firewall `action` / `block_response` / association `priority`, exactly one domain source per firewall rule, `domain_list_key` must exist, resolver SG rules need exactly one source, SG name cannot start with `sg-`, endpoints need a security group
+- Example `examples/dnssec-dns-firewall`
+
+### Changed
+
+- `resolver_endpoints.security_group_ids` is now optional (default `[]`); an endpoint must still define it or set `create_security_group = true`
+
+### Upgrade notes
+
+- No changes for existing configurations: every new feature is disabled by default.
+- Before disabling DNSSEC on a signed zone, remove the DS record from the parent zone and set `dnssec_signing_status = "NOT_SIGNING"`; deleting the KSK while the DS record is published breaks resolution.
+
 ## [v2.1.0] - 2026-11-17
 
 ### Added

@@ -1,6 +1,6 @@
 # Terraform AWS Route53 Module
 
-Production-ready Terraform module for managing AWS Route53 hosted zones, DNS records, health checks, delegation sets, and resolver endpoints in a single unified module.
+Production-ready Terraform module for managing AWS Route53 hosted zones, DNS records, health checks, delegation sets, DNSSEC, resolver endpoints and Resolver DNS Firewall in a single unified module.
 
 ## Features
 
@@ -10,7 +10,9 @@ Production-ready Terraform module for managing AWS Route53 hosted zones, DNS rec
 - **Routing Policies**: Weighted, latency, failover, geolocation, geoproximity, CIDR, and multivalue
 - **Health Checks**: HTTP, HTTPS, TCP, calculated, and CloudWatch alarm-based checks
 - **Delegation Sets**: Reusable delegation sets for consistent name servers
-- **Resolver Endpoints**: Inbound and outbound DNS resolver endpoints
+- **DNSSEC**: Key-signing keys and DNSSEC signing for public zones, with an optional KMS key (us-east-1) created by the module
+- **Resolver Endpoints**: Inbound and outbound DNS resolver endpoints, with an optional security group (TCP/UDP 53) created by the module
+- **Resolver DNS Firewall**: Domain lists, rule groups, rules, VPC associations and RAM sharing
 - **Resolver Rules**: DNS forwarding rules with VPC associations
 - **Cross-Resource References**: Records can reference zones and health checks created in the same module
 - **Cross-Account Private Zones**: VPC association authorizations and `ignore_vpc` to keep externally managed associations
@@ -23,7 +25,7 @@ Production-ready Terraform module for managing AWS Route53 hosted zones, DNS rec
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -62,7 +64,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -92,7 +94,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -125,7 +127,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -180,7 +182,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -235,7 +237,7 @@ module "route53" {
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -258,11 +260,76 @@ module "route53" {
 
 The other account then creates the `aws_route53_zone_association` with the zone ID from `zone_ids`.
 
+### DNSSEC
+
+```hcl
+module "route53" {
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
+
+  account_name = "prod"
+  project_name = "myapp"
+
+  zones = {
+    public = {
+      domain_name   = "example.com"
+      enable_dnssec = true
+    }
+  }
+
+  # Optional: bring your own key (us-east-1, ECC_NIST_P256, SIGN_VERIFY) instead of
+  # the one created by the module
+  # dnssec_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/..."
+}
+```
+
+Publish the `dnssec_ds_records` output at the registrar (or parent zone) to complete the
+chain of trust. To disable DNSSEC, first set `dnssec_signing_status = "NOT_SIGNING"` and remove
+the DS record from the parent.
+
+### Resolver Endpoint with Security Group and DNS Firewall
+
+```hcl
+module "route53" {
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
+
+  account_name = "prod"
+  project_name = "myapp"
+
+  resolver_endpoints = {
+    inbound = {
+      direction             = "INBOUND"
+      create_security_group = true
+      vpc_id                = "vpc-12345678"
+      ip_addresses          = [{ subnet_id = "subnet-aaaa" }, { subnet_id = "subnet-bbbb" }]
+      security_group_ingress_rules = {
+        onprem = { cidr_ipv4 = "192.168.0.0/16" } # creates TCP and UDP 53 rules
+      }
+    }
+  }
+
+  firewall_domain_lists = {
+    blocked = { domains = ["malware.example.", "*.phishing.example."] }
+  }
+
+  firewall_rule_groups = {
+    main = {
+      rules = {
+        allow-corp = { priority = 100, action = "ALLOW", domains = ["corp.example.com."] }
+        block-bad  = { priority = 200, action = "BLOCK", block_response = "NXDOMAIN", domain_list_key = "blocked" }
+      }
+      vpc_associations = {
+        app = { vpc_id = "vpc-12345678", priority = 101 }
+      }
+    }
+  }
+}
+```
+
 ### Using External Zone ID
 
 ```hcl
 module "route53" {
-  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.1.0"
+  source = "github.com/jhonmezaa/terraform-aws-route53//route53?ref=v2.2.0"
 
   account_name = "prod"
   project_name = "myapp"
@@ -309,6 +376,11 @@ Each zone object supports:
 - `delegation_set_key` (string) - Key of a delegation set created in this module (public zones only)
 - `vpc_association_authorizations` (map of objects: `vpc_id`, `vpc_region`) - VPCs (usually in other accounts) authorized to associate with this private zone
 - `ignore_vpc` (bool) - Ignore changes to VPC associations after creation (default: false). See the Upgrade notes in the CHANGELOG before toggling it on an existing zone
+- `enable_dnssec` (bool) - Enable DNSSEC signing (public zones only, default: false)
+- `dnssec_kms_key_arn` (string) - KMS key for this zone's KSK (falls back to `dnssec_kms_key_arn`, then to the key created by the module)
+- `dnssec_key_signing_key_name` (string) - KSK name, letters/numbers/underscores (default: `ksk_<domain with "_" instead of dots>`)
+- `dnssec_key_signing_key_status` (string) - `ACTIVE` or `INACTIVE` (default: `ACTIVE`)
+- `dnssec_signing_status` (string) - `SIGNING` or `NOT_SIGNING` (default: `SIGNING`)
 - `tags` (map of string) - Additional tags
 
 ### DNS Records
@@ -369,6 +441,17 @@ Each health check object supports:
 - `reference_name` (string) - Caller reference name (forces replacement)
 - `tags` (map of string) - Additional tags
 
+### DNSSEC
+
+| Name                                     | Description                                                                                                       | Type           | Default                    | Required |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------- | -------------------------- | -------- |
+| `create_dnssec_kms_key`                  | Create the DNSSEC KMS key (only when a zone enables DNSSEC without its own key and `dnssec_kms_key_arn` is null) | `bool`         | `true`                     | no       |
+| `dnssec_kms_key_arn`                     | Existing KMS key ARN for DNSSEC (takes precedence over the created key)                                          | `string`       | `null`                     | no       |
+| `dnssec_kms_key_description`             | Description of the created KMS key                                                                                | `string`       | `"Route53 DNSSEC KMS Key"` | no       |
+| `dnssec_kms_key_aliases`                 | Aliases for the created KMS key (`alias/` added when missing)                                                     | `list(string)` | `[]`                       | no       |
+| `dnssec_kms_key_deletion_window_in_days` | Deletion window of the created KMS key (7-30)                                                                     | `number`       | `30`                       | no       |
+| `dnssec_kms_key_tags`                    | Additional tags for the created KMS key                                                                           | `map(string)`  | `{}`                       | no       |
+
 ### Delegation Sets
 
 | Name              | Description                      | Type          | Default | Required |
@@ -381,11 +464,38 @@ Each health check object supports:
 | -------------------- | ----------------------------------- | ------------- | ------- | -------- |
 | `resolver_endpoints` | Map of resolver endpoints to create | `map(object)` | `{}`    | no       |
 
+Each resolver endpoint object supports `name`, `direction`, `ip_addresses`, `protocols`,
+`resolver_endpoint_type`, `tags` and:
+
+- `security_group_ids` (list of string) - Existing security groups (default: `[]`; required unless `create_security_group = true`)
+- `create_security_group` (bool) - Create a security group for the endpoint (default: false)
+- `vpc_id` (string) - VPC of the created security group (required with `create_security_group`)
+- `security_group_name` (string) - Name of the created security group (default: naming convention; cannot start with `sg-`)
+- `security_group_use_name_prefix` (bool) - Use the name as prefix (default: false)
+- `security_group_description` (string) - Description of the created security group
+- `security_group_ingress_rules` / `security_group_egress_rules` (map of objects) - Port 53 rules; each creates a TCP and a UDP rule. Set exactly one of `cidr_ipv4`, `cidr_ipv6`, `prefix_list_id`, `referenced_security_group_id`; optional `description`, `tags`
+- `security_group_tags` (map of string) - Additional tags for the security group and its rules
+
 ### Resolver Rules
 
 | Name             | Description                     | Type          | Default | Required |
 | ---------------- | ------------------------------- | ------------- | ------- | -------- |
 | `resolver_rules` | Map of resolver rules to create | `map(object)` | `{}`    | no       |
+
+### Resolver DNS Firewall
+
+| Name                    | Description                                                     | Type          | Default | Required |
+| ----------------------- | --------------------------------------------------------------- | ------------- | ------- | -------- |
+| `firewall_domain_lists` | Shared domain lists (`name`, `domains`, `tags`)                 | `map(object)` | `{}`    | no       |
+| `firewall_rule_groups`  | Rule groups with their rules, VPC associations and RAM sharing  | `map(object)` | `{}`    | no       |
+
+Each rule group supports `name`, `tags`, `ram_resource_share_arns` (map of RAM share ARNs),
+`vpc_associations` (map of `vpc_id`, `priority` 101-9900, `name`, `mutation_protection`, `tags`) and
+`rules` (map). Each rule sets `priority`, `action` (`ALLOW`, `BLOCK`, `ALERT`), exactly one of
+`domains` (inline list, creates a dedicated domain list), `domain_list_key` or
+`firewall_domain_list_id`, and optionally `name`, `block_response`, `block_override_dns_type`,
+`block_override_domain`, `block_override_ttl`, `firewall_domain_redirection_action`, `q_type`,
+`domain_list_name` and `tags` (inline domain list).
 
 ## Outputs
 
@@ -437,6 +547,35 @@ Each health check object supports:
 | `resolver_rule_arns`             | Map of resolver rule key to ARN                     |
 | `resolver_rules`                 | All created resolver rules with full attributes     |
 | `resolver_rule_associations`     | All created resolver rule associations              |
+| `resolver_endpoint_security_group_ids`  | Map of resolver endpoint key to created security group ID  |
+| `resolver_endpoint_security_group_arns` | Map of resolver endpoint key to created security group ARN |
+
+### DNSSEC
+
+| Name                         | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `dnssec_kms_key_arn`         | ARN of the created DNSSEC KMS key (or `null`)       |
+| `dnssec_kms_key_id`          | ID of the created DNSSEC KMS key (or `null`)        |
+| `dnssec_kms_key_policy`      | Policy of the created DNSSEC KMS key (or `null`)    |
+| `dnssec_key_signing_key_ids` | Map of zone key to KSK ID                           |
+| `dnssec_ds_records`          | Map of zone key to DS record (publish in parent)    |
+| `dnssec_digest_values`       | Map of zone key to KSK digest value                 |
+| `dnssec_dnskey_records`      | Map of zone key to DNSKEY record                    |
+| `dnssec_key_tags`            | Map of zone key to KSK key tag                      |
+| `dnssec_public_keys`         | Map of zone key to KSK public key                   |
+
+### Resolver DNS Firewall
+
+| Name                                  | Description                                                     |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `firewall_domain_list_ids`            | Map of domain list key (shared or `<group>-<rule>`) to ID       |
+| `firewall_domain_list_arns`           | Map of domain list key (shared or `<group>-<rule>`) to ARN      |
+| `firewall_rule_group_ids`             | Map of rule group key to ID                                     |
+| `firewall_rule_group_arns`            | Map of rule group key to ARN                                    |
+| `firewall_rule_group_share_status`    | Map of rule group key to share status                           |
+| `firewall_rules`                      | All created firewall rules (key = `<group>-<rule>`)             |
+| `firewall_rule_group_association_ids` | Map of `<group>-<association>` to association ID                |
+| `firewall_ram_resource_associations`  | All created RAM resource associations                           |
 
 ## Requirements
 
@@ -451,6 +590,7 @@ See the [examples](./examples) directory for complete usage examples:
 
 - [Basic](./examples/basic) - Public hosted zone with A, CNAME, MX, and TXT records
 - [Complete](./examples/complete) - Full-featured example with public/private zones, delegation set reference, cross-account authorization, alias records (including `self`), routing policies and health checks
+- [DNSSEC + DNS Firewall](./examples/dnssec-dns-firewall) - DNSSEC-signed public zone, resolver endpoint with a module-managed security group and Resolver DNS Firewall
 
 ## Resource Naming
 
@@ -467,7 +607,16 @@ Resolver endpoints and resolver rules follow a similar pattern (truncated to 64 
 ```
 {region_prefix}-r53-resolver-{account_name}-{project_name}-{key}
 {region_prefix}-r53-rule-{account_name}-{project_name}-{key}
+{region_prefix}-r53-fw-rg-{account_name}-{project_name}-{key}          # firewall rule group
+{region_prefix}-r53-fw-dl-{account_name}-{project_name}-{key}          # domain list (inline: {group}-{rule})
+{region_prefix}-r53-fw-assoc-{account_name}-{project_name}-{group}-{key}
+{region_prefix}-kms-dnssec-{account_name}-{project_name}               # DNSSEC KMS key Name tag
 ```
+
+Resolver endpoint security groups: `{region_prefix}-sg-r53-resolver-{account_name}-{project_name}-{key}`
+(without region prefix: `r53-resolver-sg-...`, since AWS rejects names starting with `sg-`).
+DNSSEC key-signing keys default to `ksk_<domain_name>` with non-alphanumeric characters replaced
+by `_` (AWS only allows letters, numbers and underscores). Firewall rules use the rule key as name.
 
 Hosted zones use the domain name as `Name` tag. Every taggable resource gets
 `merge(tags_common, tags, <resource tags>, { Name, ManagedBy = "Terraform" })`.
