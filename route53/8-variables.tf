@@ -82,6 +82,14 @@ variable "zones" {
     - ignore_vpc: Ignore changes to the VPC associations after creation (use when extra VPC
       associations are managed outside this module, e.g. cross-account). Changing it on an
       existing zone moves it between resource addresses (see Upgrade notes)
+    - enable_dnssec: Enable DNSSEC signing (public zones only, default false). Creates a
+      key-signing key (KSK) and aws_route53_hosted_zone_dnssec
+    - dnssec_kms_key_arn: KMS key (us-east-1, ECC_NIST_P256, SIGN_VERIFY) for this zone's KSK.
+      Falls back to var.dnssec_kms_key_arn and then to the key created by the module
+    - dnssec_key_signing_key_name: KSK name (letters, numbers and underscores). Default:
+      ksk_<domain_name with non-alphanumeric characters replaced by "_">
+    - dnssec_key_signing_key_status: ACTIVE or INACTIVE (default ACTIVE)
+    - dnssec_signing_status: SIGNING or NOT_SIGNING (default SIGNING)
     - tags: Additional tags for this specific zone
   EOT
   type = map(object({
@@ -98,10 +106,77 @@ variable "zones" {
       vpc_id     = string
       vpc_region = optional(string)
     })), {})
-    ignore_vpc = optional(bool, false)
-    tags       = optional(map(string), {})
+    ignore_vpc                    = optional(bool, false)
+    enable_dnssec                 = optional(bool, false)
+    dnssec_kms_key_arn            = optional(string)
+    dnssec_key_signing_key_name   = optional(string)
+    dnssec_key_signing_key_status = optional(string, "ACTIVE")
+    dnssec_signing_status         = optional(string, "SIGNING")
+    tags                          = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition     = alltrue([for k, v in var.zones : contains(["ACTIVE", "INACTIVE"], v.dnssec_key_signing_key_status)])
+    error_message = "dnssec_key_signing_key_status debe ser ACTIVE o INACTIVE."
+  }
+
+  validation {
+    condition     = alltrue([for k, v in var.zones : contains(["SIGNING", "NOT_SIGNING"], v.dnssec_signing_status)])
+    error_message = "dnssec_signing_status debe ser SIGNING o NOT_SIGNING."
+  }
+
+  validation {
+    condition = alltrue([
+      for k, v in var.zones : v.dnssec_key_signing_key_name == null || can(regex("^[0-9A-Za-z_]{3,128}$", coalesce(v.dnssec_key_signing_key_name, "-")))
+    ])
+    error_message = "dnssec_key_signing_key_name debe tener entre 3 y 128 caracteres (letras, números y guiones bajos)."
+  }
+}
+
+# =============================================================================
+# DNSSEC
+# =============================================================================
+
+variable "create_dnssec_kms_key" {
+  description = "Whether to create the KMS key used by DNSSEC (us-east-1, ECC_NIST_P256). Only created when var.dnssec_kms_key_arn is null and at least one zone has enable_dnssec = true without its own dnssec_kms_key_arn."
+  type        = bool
+  default     = true
+}
+
+variable "dnssec_kms_key_arn" {
+  description = "ARN of an existing KMS key for DNSSEC signing (used by zones without their own dnssec_kms_key_arn). Takes precedence over the key created by the module."
+  type        = string
+  default     = null
+}
+
+variable "dnssec_kms_key_description" {
+  description = "Description of the DNSSEC KMS key created by the module."
+  type        = string
+  default     = "Route53 DNSSEC KMS Key"
+}
+
+variable "dnssec_kms_key_aliases" {
+  description = "Aliases for the DNSSEC KMS key created by the module (the \"alias/\" prefix is added when missing). Values must be static strings."
+  type        = list(string)
+  default     = []
+}
+
+variable "dnssec_kms_key_deletion_window_in_days" {
+  description = "Waiting period (7-30 days) before the DNSSEC KMS key is deleted."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.dnssec_kms_key_deletion_window_in_days >= 7 && var.dnssec_kms_key_deletion_window_in_days <= 30
+    error_message = "dnssec_kms_key_deletion_window_in_days debe estar entre 7 y 30."
+  }
+}
+
+variable "dnssec_kms_key_tags" {
+  description = "Additional tags for the DNSSEC KMS key created by the module."
+  type        = map(string)
+  default     = {}
 }
 
 # =============================================================================
@@ -292,7 +367,17 @@ variable "resolver_endpoints" {
     - name: Friendly name for the resolver endpoint
     - direction: INBOUND or OUTBOUND
     - ip_addresses: List of subnet IDs and optional IP addresses
-    - security_group_ids: List of security group IDs to associate
+    - security_group_ids: List of existing security group IDs to associate (default [])
+    - create_security_group: Create a security group for the endpoint (default false). It is
+      added to security_group_ids
+    - vpc_id: VPC of the created security group (required with create_security_group)
+    - security_group_name: Name of the created security group (default: module naming convention)
+    - security_group_use_name_prefix: Use security_group_name as a name prefix (default false)
+    - security_group_description: Description of the created security group
+    - security_group_ingress_rules / security_group_egress_rules: Map of rules on port 53; each
+      one creates a TCP and a UDP rule. Each rule sets one of cidr_ipv4, cidr_ipv6,
+      prefix_list_id or referenced_security_group_id
+    - security_group_tags: Additional tags for the created security group and its rules
     - protocols: List of protocols (Do53, DoH, DoH-FIPS)
     - resolver_endpoint_type: IPV4, IPV6, or DUALSTACK
     - tags: Additional tags for this resolver endpoint
@@ -305,12 +390,51 @@ variable "resolver_endpoints" {
       ip        = optional(string)
       ipv6      = optional(string)
     }))
-    security_group_ids     = list(string)
+    security_group_ids             = optional(list(string), [])
+    create_security_group          = optional(bool, false)
+    vpc_id                         = optional(string)
+    security_group_name            = optional(string)
+    security_group_use_name_prefix = optional(bool, false)
+    security_group_description     = optional(string)
+    security_group_ingress_rules = optional(map(object({
+      description                  = optional(string)
+      cidr_ipv4                    = optional(string)
+      cidr_ipv6                    = optional(string)
+      prefix_list_id               = optional(string)
+      referenced_security_group_id = optional(string)
+      tags                         = optional(map(string), {})
+    })), {})
+    security_group_egress_rules = optional(map(object({
+      description                  = optional(string)
+      cidr_ipv4                    = optional(string)
+      cidr_ipv6                    = optional(string)
+      prefix_list_id               = optional(string)
+      referenced_security_group_id = optional(string)
+      tags                         = optional(map(string), {})
+    })), {})
+    security_group_tags    = optional(map(string), {})
     protocols              = optional(list(string), [])
     resolver_endpoint_type = optional(string)
     tags                   = optional(map(string), {})
   }))
   default = {}
+
+  validation {
+    condition = alltrue([
+      for k, v in var.resolver_endpoints : v.security_group_name == null || !can(regex("^(?i)sg-", coalesce(v.security_group_name, "x")))
+    ])
+    error_message = "security_group_name no puede empezar por \"sg-\" (AWS lo rechaza)."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for k, v in var.resolver_endpoints : [
+        for r in values(merge(v.security_group_ingress_rules, v.security_group_egress_rules)) :
+        length(compact([r.cidr_ipv4, r.cidr_ipv6, r.prefix_list_id, r.referenced_security_group_id])) == 1
+      ]
+    ]))
+    error_message = "Cada regla de security group del resolver debe definir exactamente uno de cidr_ipv4, cidr_ipv6, prefix_list_id o referenced_security_group_id."
+  }
 
   validation {
     condition     = alltrue([for k, v in var.resolver_endpoints : contains(["INBOUND", "OUTBOUND"], v.direction)])
@@ -363,5 +487,111 @@ variable "resolver_rules" {
       for k, v in var.resolver_rules : v.rule_type != "FORWARD" || v.resolver_endpoint_id != null || v.resolver_endpoint_key != null
     ])
     error_message = "Las reglas FORWARD deben definir resolver_endpoint_id o resolver_endpoint_key."
+  }
+}
+
+# =============================================================================
+# Resolver DNS Firewall
+# =============================================================================
+
+variable "firewall_domain_lists" {
+  description = <<-EOT
+    Map of Route53 Resolver DNS Firewall domain lists, shared by rules through domain_list_key.
+
+    Each domain list supports:
+    - name: Domain list name (default: module naming convention)
+    - domains: List of domains (e.g. "example.com", "*.example.com")
+    - tags: Additional tags for this domain list
+  EOT
+  type = map(object({
+    name    = optional(string)
+    domains = list(string)
+    tags    = optional(map(string), {})
+  }))
+  default = {}
+}
+
+variable "firewall_rule_groups" {
+  description = <<-EOT
+    Map of Route53 Resolver DNS Firewall rule groups.
+
+    Each rule group supports:
+    - name: Rule group name (default: module naming convention)
+    - rules: Map of rules (key = rule name unless name is set). Each rule sets exactly one of:
+      - domains: inline list of domains (creates a dedicated domain list, as the official module)
+      - domain_list_key: key of a domain list in var.firewall_domain_lists
+      - firewall_domain_list_id: ID of an external domain list
+      Plus priority, action (ALLOW, BLOCK, ALERT), block_response (NODATA, NXDOMAIN, OVERRIDE),
+      block_override_dns_type, block_override_domain, block_override_ttl,
+      firewall_domain_redirection_action, q_type, domain_list_name and tags (inline list only)
+    - vpc_associations: Map of VPC associations (vpc_id, priority 101-9900, optional name,
+      mutation_protection ENABLED/DISABLED and tags)
+    - ram_resource_share_arns: Map of RAM resource share ARNs to share this rule group with
+    - tags: Additional tags for this rule group and its inline domain lists / associations
+  EOT
+  type = map(object({
+    name = optional(string)
+    rules = optional(map(object({
+      name                               = optional(string)
+      priority                           = number
+      action                             = string
+      domains                            = optional(list(string))
+      domain_list_name                   = optional(string)
+      domain_list_key                    = optional(string)
+      firewall_domain_list_id            = optional(string)
+      block_response                     = optional(string)
+      block_override_dns_type            = optional(string)
+      block_override_domain              = optional(string)
+      block_override_ttl                 = optional(number)
+      firewall_domain_redirection_action = optional(string)
+      q_type                             = optional(string)
+      tags                               = optional(map(string), {})
+    })), {})
+    vpc_associations = optional(map(object({
+      vpc_id              = string
+      priority            = number
+      name                = optional(string)
+      mutation_protection = optional(string)
+      tags                = optional(map(string), {})
+    })), {})
+    ram_resource_share_arns = optional(map(string), {})
+    tags                    = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue(flatten([
+      for gk, g in var.firewall_rule_groups : [
+        for rk, r in g.rules : contains(["ALLOW", "BLOCK", "ALERT"], r.action)
+      ]
+    ]))
+    error_message = "action de las reglas de firewall debe ser ALLOW, BLOCK o ALERT."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for gk, g in var.firewall_rule_groups : [
+        for rk, r in g.rules : length([for x in [r.domains, r.domain_list_key, r.firewall_domain_list_id] : x if x != null]) == 1
+      ]
+    ]))
+    error_message = "Cada regla de firewall debe definir exactamente uno de domains, domain_list_key o firewall_domain_list_id."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for gk, g in var.firewall_rule_groups : [
+        for rk, r in g.rules : r.block_response == null || contains(["NODATA", "NXDOMAIN", "OVERRIDE"], coalesce(r.block_response, "-"))
+      ]
+    ]))
+    error_message = "block_response debe ser NODATA, NXDOMAIN u OVERRIDE."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for gk, g in var.firewall_rule_groups : [
+        for ak, a in g.vpc_associations : a.priority >= 101 && a.priority <= 9900
+      ]
+    ]))
+    error_message = "priority de las asociaciones de firewall debe estar entre 101 y 9900."
   }
 }
